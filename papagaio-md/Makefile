@@ -3,6 +3,10 @@
 # papagaio and papagaio_ffi (with libffi and dlopen).
 
 TARGET = papagaio-md
+ifeq ($(OS),Windows_NT)
+  EXE = .exe
+endif
+TARGET_EXE = $(TARGET)$(EXE)
 
 CC         ?= cc
 PKG_CONFIG ?= pkg-config
@@ -40,7 +44,7 @@ OBJS = cli.o papagaio.o papagaio_ffi.o papagaio_md_script.o
 
 .PHONY: all clean install
 
-all: $(TARGET)
+all: $(TARGET_EXE)
 
 papagaio_md_script.c: papagaio_md.lua
 	@echo "/* Auto-generated from papagaio_md.lua */" > $@
@@ -60,13 +64,13 @@ papagaio_ffi.o: $(FFI_SRC)
 papagaio_md_script.o: $(GEN_SRC)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(TARGET): $(OBJS)
+$(TARGET_EXE): $(OBJS)
 	$(CC) -o $@ $(OBJS) $(LDFLAGS)
 
-install: $(TARGET)
+install: $(TARGET_EXE)
 	install -d $(BINDIR)
-	install -m 755 $(TARGET) $(BINDIR)/$(TARGET)
+	install -m 755 $(TARGET_EXE) $(BINDIR)/$(TARGET)
 	@echo "Installed $(TARGET) to $(BINDIR)/"
 
 clean:
-	rm -f $(TARGET) $(OBJS) $(GEN_SRC)
+	rm -f $(TARGET) $(TARGET).exe $(OBJS) $(GEN_SRC)

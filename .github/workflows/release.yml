@@ -137,6 +137,11 @@ jobs:
         if: matrix.target == 'linux-armv7'
         run: |
           sudo dpkg --add-architecture armhf
+          # Add ports.ubuntu.com for armhf
+          sudo sed -i "s/^deb /deb [arch=amd64,i386] /g" /etc/apt/sources.list /etc/apt/sources.list.d/*.list || true
+          echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -sc) main restricted universe multiverse" | sudo tee /etc/apt/sources.list.d/armhf.list
+          echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -sc)-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/armhf.list
+          echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -sc)-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/armhf.list
           sudo apt-get update
           sudo apt-get install -y gcc-arm-linux-gnueabihf libffi-dev:armhf pkg-config
 
@@ -175,7 +180,7 @@ jobs:
             export PKG_CONFIG_PATH="/usr/lib/i386-linux-gnu/pkgconfig"
           elif [ "${{ matrix.target }}" = "linux-armv7" ]; then
             export CC=arm-linux-gnueabihf-gcc
-            export PKG_CONFIG_PATH="/usr/lib/arm-linux-gnu/pkgconfig"
+            export PKG_CONFIG_PATH="/usr/lib/arm-linux-gnueabihf/pkgconfig"
           elif [ "${{ matrix.target }}" = "linux-arm64" ]; then
             # Native on ubuntu-24.04-arm
             export CC=gcc
@@ -195,11 +200,12 @@ jobs:
         if: startsWith(matrix.target, 'windows-msvc')
         shell: powershell
         run: |
-          $arch = "${{ matrix.target == 'windows-msvc' && 'x64' || 'x86' }}"
-          $triplet = "${arch}-windows"
+          $v_arch = "${{ matrix.target == 'windows-msvc' && 'x64' || 'x86' }}"
+          $triplet = "${v_arch}-windows"
+          $cmake_arch = if ($v_arch -eq "x64") { "x64" } else { "Win32" }
           $vcpkg = "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe"
           & $vcpkg install libffi:$triplet
-          cmake -S . -B build-msvc -A ($arch -eq "x64" ? "x64" : "Win32") `
+          cmake -S . -B build-msvc -A $cmake_arch `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=$triplet
           cmake --build build-msvc --config Release -j2
@@ -226,9 +232,9 @@ jobs:
         if: startsWith(matrix.target, 'windows-msvc')
         shell: powershell
         run: |
-          mkdir -p dist_pkg
-          cp build-msvc/Release/papagaio-md.exe dist_pkg/
-          cp README.md dist_pkg/
+          New-Item -ItemType Directory -Force -Path dist_pkg
+          Copy-Item build-msvc/Release/papagaio-md.exe dist_pkg/
+          Copy-Item README.md dist_pkg/
           Compress-Archive -Path dist_pkg/* -DestinationPath papagaio-md-v${{ inputs.version }}-${{ matrix.archive }}.zip -Force
 
       - name: Upload artifacts

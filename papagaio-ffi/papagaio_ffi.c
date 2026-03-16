@@ -266,9 +266,9 @@ PF_WRITE_F(f32, float)   PF_WRITE_F(f64, double)
  * ====================================================================== */
 #ifdef PAPAGAIO_FFI_HAS_DL
 
-#ifndef _WIN32
 enum { PF_DL_LAZY=1, PF_DL_NOW=2, PF_DL_LOCAL=4, PF_DL_GLOBAL=8, PF_DL_NODELETE=16, PF_DL_NOLOAD=32 };
 
+#ifndef _WIN32
 static int pf_dl_to_native(int flags) {
     int f = 0;
     if (flags & PF_DL_LAZY)     f |= RTLD_LAZY;
