@@ -1,7 +1,7 @@
 {
   "id": "papagaio-md",
   "name": "papagaio.md",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "minAppVersion": "1.0.0",
   "description": "Execute Lua 5.4 code blocks in your notes. Includes papagaio text processing and papagaio_ffi memory primitives. Compatible with desktop and Android.",
   "author": "jardimdanificado",

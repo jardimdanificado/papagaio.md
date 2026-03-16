@@ -133,65 +133,94 @@ EM_JS(char*, js_obsidian_get_active_content, (), {
     return stringOnWasmHeap;
 });
 
-EM_JS(char*, js_obsidian_list_files, (), {
+EM_JS(void, js_obsidian_notice, (const char* text), {
+    const t = UTF8ToString(text);
+    new window.obsidian.Notice(t);
+});
+
+EM_ASYNC_JS(int, js_obsidian_mkdir, (const char* path), {
+    const p = UTF8ToString(path);
     const plugin = window._papagaio_plugin;
     if (!plugin) return 0;
-    const files = plugin.app.vault.getFiles().map(f => f.path).join("\n");
-    const lengthBytes = lengthBytesUTF8(files) + 1;
+    try {
+        await plugin.app.vault.adapter.mkdir(p);
+        return 1;
+    } catch (e) {
+        return 0;
+    }
+});
+
+EM_JS(char*, js_obsidian_get_metadata, (const char* path), {
+    const p = UTF8ToString(path);
+    const plugin = window._papagaio_plugin;
+    if (!plugin) return 0;
+    const file = plugin.app.vault.getAbstractFileByPath(p);
+    if (!file) return 0;
+    const cache = plugin.app.metadataCache.getFileCache(file);
+    if (!cache || !cache.frontmatter) return 0;
+    const fm = JSON.stringify(cache.frontmatter);
+    const lengthBytes = lengthBytesUTF8(fm) + 1;
     const stringOnWasmHeap = _malloc(lengthBytes);
-    stringToUTF8(files, stringOnWasmHeap, lengthBytes);
+    stringToUTF8(fm, stringOnWasmHeap, lengthBytes);
     return stringOnWasmHeap;
 });
 
-static int lua_obsidian_read(lua_State *L) {
-    const char *path = luaL_checkstring(L, 1);
-    char *res = js_obsidian_read(path);
-    if (!res) {
-        lua_pushnil(L);
-        lua_pushstring(L, "file not found or error reading");
-        return 2;
-    }
-    lua_pushstring(L, res);
-    free(res);
-    return 1;
+EM_JS(char*, js_obsidian_list_files, (), {
+// ... skipping unchanged lines until list_files ...
+    return stringOnWasmHeap;
+});
+
+static int lua_obsidian_notice(lua_State *L) {
+    const char *text = luaL_checkstring(L, 1);
+    js_obsidian_notice(text);
+    return 0;
 }
 
-static int lua_obsidian_write(lua_State *L) {
+static int lua_obsidian_mkdir(lua_State *L) {
     const char *path = luaL_checkstring(L, 1);
-    const char *content = luaL_checkstring(L, 2);
-    int ok = js_obsidian_write(path, content);
+    int ok = js_obsidian_mkdir(path);
     lua_pushboolean(L, ok);
     return 1;
 }
 
-static int lua_obsidian_get_active_path(lua_State *L) {
-    char *res = js_obsidian_get_active_path();
+static int lua_obsidian_get_metadata(lua_State *L) {
+    const char *path = luaL_checkstring(L, 1);
+    char *res = js_obsidian_get_metadata(path);
+    if (!res) {
+        lua_newtable(L);
+        return 1;
+    }
+    // Simple JSON parsing hack for frontmatter (just keys and string/number values)
+    // We could use a proper Lua JSON lib, but let's keep it simple for now
+    // Actually, let's just push the raw JSON string and let the user handle it
+    // or we can do a very basic parser here.
     lua_pushstring(L, res);
     free(res);
+    return 1;
+}
+
+static int lua_obsidian_read(lua_State *L) {
+// ... skipping unchanged lines until read ...
+    return 1;
+}
+
+static int lua_obsidian_write(lua_State *L) {
+// ... skipping unchanged lines until write ...
+    return 1;
+}
+
+static int lua_obsidian_get_active_path(lua_State *L) {
+// ... skipping unchanged lines until active_path ...
     return 1;
 }
 
 static int lua_obsidian_get_active_content(lua_State *L) {
-    char *res = js_obsidian_get_active_content();
-    lua_pushstring(L, res);
-    free(res);
+// ... skipping unchanged lines until active_content ...
     return 1;
 }
 
 static int lua_obsidian_list_files(lua_State *L) {
-    char *res = js_obsidian_list_files();
-    if (!res) { lua_newtable(L); return 1; }
-    
-    lua_newtable(L);
-    char *p = res;
-    int i = 1;
-    char *line = strtok(p, "\n");
-    while (line) {
-        lua_pushstring(L, line);
-        lua_rawseti(L, -2, i++);
-        line = strtok(NULL, "\n");
-    }
-    free(res);
+// ... skipping unchanged lines until list_files ...
     return 1;
 }
 
@@ -201,6 +230,9 @@ static const luaL_Reg obsidian_funcs[] = {
     {"get_active_path", lua_obsidian_get_active_path},
     {"get_active_content", lua_obsidian_get_active_content},
     {"list_files", lua_obsidian_list_files},
+    {"notice", lua_obsidian_notice},
+    {"mkdir", lua_obsidian_mkdir},
+    {"get_metadata_json", lua_obsidian_get_metadata},
     {NULL, NULL}
 };
 
