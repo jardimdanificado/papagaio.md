@@ -1,6 +1,6 @@
 {
-  "name": "obsidian-plugin",
-  "version": "1.0.0",
+  "name": "papagaio-md",
+  "version": "0.0.3",
   "description": "Execute Lua code blocks in Obsidian notes with embedded Lua 5.4 + papagaio + papagaio_ffi",
   "main": "dist/main.js",
   "scripts": {
