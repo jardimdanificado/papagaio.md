@@ -1,9 +1,12 @@
 name: Release Obsidian Plugin
 
 on:
-  push:
-    tags:
-      - 'v*' # Trigger on version tags (e.g., v1.0.0)
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.0.0)'
+        required: true
+        type: string
 
 jobs:
   build:
@@ -24,14 +27,23 @@ jobs:
       - name: Verify Emscripten
         run: emcc -v
 
-      - name: Install dependencies and build
+      - name: Update versions & Install dependencies
+        run: |
+          # Update the version in Obsidian plugin manifests
+          cd obsidian-plugin
+          sed -i 's/"version": ".*"/"version": "${{ github.event.inputs.version }}"/' manifest.json
+          sed -i 's/"version": ".*"/"version": "${{ github.event.inputs.version }}"/' package.json
+          
+          # Install dependencies
+          npm install
+
+      - name: Build and Prepare Artifacts
         run: |
           # Fetch Lua and prepare WASM engine
           make fetch_lua_if_needed
           
           # Build the plugin
           cd obsidian-plugin
-          npm install
           make clean
           make
           
@@ -45,6 +57,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.inputs.version }}
+          name: Release ${{ github.event.inputs.version }}
           files: |
             release/main.js
             release/manifest.json
