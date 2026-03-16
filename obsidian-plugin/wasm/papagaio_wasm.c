@@ -78,6 +78,132 @@ static int wasm_io_write(lua_State *L) {
     return 0;
 }
 
+/* ========================================================================
+ * Obsidian Bridge
+ * ===================================================================== */
+
+EM_ASYNC_JS(char*, js_obsidian_read, (const char* path), {
+    const p = UTF8ToString(path);
+    const plugin = window._papagaio_plugin;
+    if (!plugin) return 0;
+    try {
+        const content = await plugin.app.vault.adapter.read(p);
+        const lengthBytes = lengthBytesUTF8(content) + 1;
+        const stringOnWasmHeap = _malloc(lengthBytes);
+        stringToUTF8(content, stringOnWasmHeap, lengthBytes);
+        return stringOnWasmHeap;
+    } catch (e) {
+        return 0;
+    }
+});
+
+EM_ASYNC_JS(int, js_obsidian_write, (const char* path, const char* content), {
+    const p = UTF8ToString(path);
+    const c = UTF8ToString(content);
+    const plugin = window._papagaio_plugin;
+    if (!plugin) return 0;
+    try {
+        await plugin.app.vault.adapter.write(p, c);
+        return 1;
+    } catch (e) {
+        console.error("obsidian-plugin: write error", e);
+        return 0;
+    }
+});
+
+EM_JS(char*, js_obsidian_get_active_path, (), {
+    const plugin = window._papagaio_plugin;
+    if (!plugin) return 0;
+    const view = plugin.app.workspace.getActiveViewOfType(window.obsidian.MarkdownView);
+    const path = view ? view.file.path : "";
+    const lengthBytes = lengthBytesUTF8(path) + 1;
+    const stringOnWasmHeap = _malloc(lengthBytes);
+    stringToUTF8(path, stringOnWasmHeap, lengthBytes);
+    return stringOnWasmHeap;
+});
+
+EM_JS(char*, js_obsidian_get_active_content, (), {
+    const plugin = window._papagaio_plugin;
+    if (!plugin) return 0;
+    const view = plugin.app.workspace.getActiveViewOfType(window.obsidian.MarkdownView);
+    const content = view ? view.editor.getValue() : "";
+    const lengthBytes = lengthBytesUTF8(content) + 1;
+    const stringOnWasmHeap = _malloc(lengthBytes);
+    stringToUTF8(content, stringOnWasmHeap, lengthBytes);
+    return stringOnWasmHeap;
+});
+
+EM_JS(char*, js_obsidian_list_files, (), {
+    const plugin = window._papagaio_plugin;
+    if (!plugin) return 0;
+    const files = plugin.app.vault.getFiles().map(f => f.path).join("\n");
+    const lengthBytes = lengthBytesUTF8(files) + 1;
+    const stringOnWasmHeap = _malloc(lengthBytes);
+    stringToUTF8(files, stringOnWasmHeap, lengthBytes);
+    return stringOnWasmHeap;
+});
+
+static int lua_obsidian_read(lua_State *L) {
+    const char *path = luaL_checkstring(L, 1);
+    char *res = js_obsidian_read(path);
+    if (!res) {
+        lua_pushnil(L);
+        lua_pushstring(L, "file not found or error reading");
+        return 2;
+    }
+    lua_pushstring(L, res);
+    free(res);
+    return 1;
+}
+
+static int lua_obsidian_write(lua_State *L) {
+    const char *path = luaL_checkstring(L, 1);
+    const char *content = luaL_checkstring(L, 2);
+    int ok = js_obsidian_write(path, content);
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
+static int lua_obsidian_get_active_path(lua_State *L) {
+    char *res = js_obsidian_get_active_path();
+    lua_pushstring(L, res);
+    free(res);
+    return 1;
+}
+
+static int lua_obsidian_get_active_content(lua_State *L) {
+    char *res = js_obsidian_get_active_content();
+    lua_pushstring(L, res);
+    free(res);
+    return 1;
+}
+
+static int lua_obsidian_list_files(lua_State *L) {
+    char *res = js_obsidian_list_files();
+    if (!res) { lua_newtable(L); return 1; }
+    
+    lua_newtable(L);
+    char *p = res;
+    int i = 1;
+    char *line = strtok(p, "\n");
+    while (line) {
+        lua_pushstring(L, line);
+        lua_rawseti(L, -2, i++);
+        line = strtok(NULL, "\n");
+    }
+    free(res);
+    return 1;
+}
+
+static const luaL_Reg obsidian_funcs[] = {
+    {"read", lua_obsidian_read},
+    {"write", lua_obsidian_write},
+    {"get_active_path", lua_obsidian_get_active_path},
+    {"get_active_content", lua_obsidian_get_active_content},
+    {"list_files", lua_obsidian_list_files},
+    {NULL, NULL}
+};
+
 /* Setup sandbox */
 static void setup_sandbox(lua_State *L) {
     lua_pushcfunction(L, wasm_print);
@@ -92,6 +218,19 @@ static void setup_sandbox(lua_State *L) {
 
     lua_pushnil(L); lua_setglobal(L, "dofile");
     lua_pushnil(L); lua_setglobal(L, "loadfile");
+
+    /* Register obsidian module */
+    luaL_newlib(L, obsidian_funcs);
+    
+    char *ap = js_obsidian_get_active_path();
+    if (ap) { lua_pushstring(L, ap); free(ap); } else { lua_pushstring(L, ""); }
+    lua_setfield(L, -2, "active_path");
+
+    char *ac = js_obsidian_get_active_content();
+    if (ac) { lua_pushstring(L, ac); free(ac); } else { lua_pushstring(L, ""); }
+    lua_setfield(L, -2, "active_content");
+
+    lua_setglobal(L, "obsidian");
 
     luaL_requiref(L, "papagaio", luaopen_papagaio, 1);
     lua_pop(L, 1);

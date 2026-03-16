@@ -34,20 +34,20 @@ class LuaEngine {
     return this.initPromise;
   }
 
-  exec(code) {
+  async exec(code) {
     if (!this.mod || !this.ready) return "[ERROR] WASM not initialized";
     try {
-      const result = this.mod.ccall("papagaio_exec", "string", ["string"], [code]);
+      const result = await this.mod.ccall("papagaio_exec", "string", ["string"], [code]);
       return result || "";
     } catch (e) {
       return `[ERROR] ${e.message || e}`;
     }
   }
 
-  execMd(mdContent) {
+  async execMd(mdContent) {
     if (!this.mod || !this.ready) return "[ERROR] WASM not initialized";
     try {
-      const result = this.mod.ccall("papagaio_exec_md", "string", ["string"], [mdContent]);
+      const result = await this.mod.ccall("papagaio_exec_md", "string", ["string"], [mdContent]);
       return result || "";
     } catch (e) {
       return `[ERROR] ${e.message || e}`;
@@ -121,6 +121,10 @@ export default class PapagaioMdPlugin extends Plugin {
 
   async onload() {
     console.log("obsidian-plugin: loading plugin");
+    
+    // Bridge for WASM
+    window._papagaio_plugin = this;
+    window.obsidian = require("obsidian");
 
     // Register view
     this.registerView(VIEW_TYPE, (leaf) => new PapagaioOutputView(leaf, this));
@@ -202,7 +206,7 @@ export default class PapagaioMdPlugin extends Plugin {
       return;
     }
 
-    const output = this.engine.execMd(content);
+    const output = await this.engine.execMd(content);
     await this.showOutput(output);
     new Notice("🦜 Done!");
   }
@@ -230,7 +234,7 @@ export default class PapagaioMdPlugin extends Plugin {
     }
 
     new Notice(`🦜 Running ${label}...`);
-    const output = this.engine.exec(code);
+    const output = await this.engine.exec(code);
     await this.showOutput(output);
     new Notice("🦜 Done!");
   }

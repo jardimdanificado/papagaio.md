@@ -31,6 +31,7 @@ LINK_FLAGS = \
     -s INITIAL_MEMORY=4194304 \
     -s STACK_SIZE=1048576 \
     -s NO_EXIT_RUNTIME=1 \
+    -s ASYNCIFY=1 \
     -s FILESYSTEM=0 \
     -s ENVIRONMENT='web,worker' \
     -s SINGLE_FILE=1
