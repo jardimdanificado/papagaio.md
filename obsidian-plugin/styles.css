@@ -40,3 +40,28 @@
 .papagaio-output-code {
   color: var(--text-normal);
 }
+
+.papagaio-output-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+}
+
+.papagaio-output-footer button {
+  cursor: pointer;
+  padding: 6px 14px;
+  font-weight: 500;
+  border-radius: 4px;
+  background-color: var(--interactive-normal);
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.papagaio-output-footer button:hover {
+  background-color: var(--interactive-hover);
+}

@@ -1,0 +1,53 @@
+name: Release Obsidian Plugin
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on version tags (e.g., v1.0.0)
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+
+      - name: Verify Emscripten
+        run: emcc -v
+
+      - name: Install dependencies and build
+        run: |
+          # Fetch Lua and prepare WASM engine
+          make fetch_lua_if_needed
+          
+          # Build the plugin
+          cd obsidian-plugin
+          npm install
+          make clean
+          make
+          
+          # Prepare release artifacts
+          cd ..
+          mkdir -p release
+          cp obsidian-plugin/dist/main.js release/
+          cp obsidian-plugin/manifest.json release/
+          cp obsidian-plugin/styles.css release/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/main.js
+            release/manifest.json
+            release/styles.css
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

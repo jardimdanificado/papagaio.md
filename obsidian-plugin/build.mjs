@@ -15,7 +15,7 @@ const wasmInlinePlugin = {
 };
 
 const ctx = await esbuild.context({
-  entryPoints: ["src/main.ts"],
+  entryPoints: ["src/main.js"],
   bundle: true,
   outfile: "dist/main.js",
   platform: "node",

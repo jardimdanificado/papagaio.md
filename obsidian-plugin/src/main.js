@@ -1,36 +1,23 @@
 import {
-  App,
   ItemView,
   MarkdownView,
   Notice,
-  Plugin,
-  WorkspaceLeaf,
+  Plugin
 } from "obsidian";
 
-// @ts-ignore — loaded at runtime
+// @ts-ignore
 import createPapagaioModule from "../dist/papagaio.js";
 
 const VIEW_TYPE = "papagaio-output";
 
-/* ================================================================
- * Lua WASM Engine
- * ============================================================= */
-interface PapagaioModule {
-  ccall: (name: string, ret: string, args: string[], values: any[]) => any;
-  cwrap: (name: string, ret: string, args: string[]) => Function;
-  UTF8ToString: (ptr: number) => string;
-  stringToUTF8: (str: string, ptr: number, max: number) => void;
-  lengthBytesUTF8: (str: string) => number;
-  _malloc: (size: number) => number;
-  _free: (ptr: number) => void;
-}
-
 class LuaEngine {
-  private mod: PapagaioModule | null = null;
-  private ready = false;
-  private initPromise: Promise<void> | null = null;
+  constructor() {
+    this.mod = null;
+    this.ready = false;
+    this.initPromise = null;
+  }
 
-  async init(): Promise<void> {
+  async init() {
     if (this.ready) return;
     if (this.initPromise) return this.initPromise;
 
@@ -39,7 +26,7 @@ class LuaEngine {
         this.mod = await createPapagaioModule();
         this.ready = true;
       } catch (e) {
-        console.error("papagaio-md: failed to init WASM", e);
+        console.error("obsidian-plugin: failed to init WASM", e);
         throw e;
       }
     })();
@@ -47,114 +34,104 @@ class LuaEngine {
     return this.initPromise;
   }
 
-  exec(code: string): string {
+  exec(code) {
     if (!this.mod || !this.ready) return "[ERROR] WASM not initialized";
     try {
       const result = this.mod.ccall("papagaio_exec", "string", ["string"], [code]);
       return result || "";
-    } catch (e: any) {
+    } catch (e) {
       return `[ERROR] ${e.message || e}`;
     }
   }
 
-  execBlocks(codes: string[]): string {
-    if (!this.mod || !this.ready) return "[ERROR] WASM not initialized";
-    const parts: string[] = [];
-    for (let i = 0; i < codes.length; i++) {
-      parts.push(`--- block ${i + 1} ---`);
-      try {
-        const result = this.mod.ccall("papagaio_exec", "string", ["string"], [codes[i]]);
-        if (result) parts.push(result);
-      } catch (e: any) {
-        parts.push(`[ERROR] ${e.message || e}`);
-      }
-    }
-    return parts.join("\n");
-  }
-
-  execMd(mdContent: string): string {
+  execMd(mdContent) {
     if (!this.mod || !this.ready) return "[ERROR] WASM not initialized";
     try {
       const result = this.mod.ccall("papagaio_exec_md", "string", ["string"], [mdContent]);
       return result || "";
-    } catch (e: any) {
+    } catch (e) {
       return `[ERROR] ${e.message || e}`;
     }
   }
 
-  version(): string {
+  version() {
     if (!this.mod || !this.ready) return "not initialized";
     return this.mod.ccall("papagaio_version", "string", [], []);
   }
 }
 
-/* ================================================================
- * Output View
- * ============================================================= */
 class PapagaioOutputView extends ItemView {
-  private content = "";
-
-  constructor(leaf: WorkspaceLeaf) {
+  constructor(leaf, plugin) {
     super(leaf);
+    this.plugin = plugin;
+    this.content = "";
   }
 
-  getViewType(): string {
+  getViewType() {
     return VIEW_TYPE;
   }
 
-  getDisplayText(): string {
+  getDisplayText() {
     return "🦜 Papagaio Output";
   }
 
-  getIcon(): string {
+  getIcon() {
     return "terminal";
   }
 
-  async onOpen(): Promise<void> {
+  async onOpen() {
     this.render();
   }
 
-  setContent(text: string): void {
+  setContent(text) {
     this.content = text;
     this.render();
   }
 
-  private render(): void {
-    const container = this.containerEl.children[1] as HTMLElement;
+  render() {
+    const container = this.containerEl.children[1];
     container.empty();
 
     const wrapper = container.createDiv({ cls: "papagaio-output-wrapper" });
 
     // Header
     const header = wrapper.createDiv({ cls: "papagaio-output-header" });
-    header.createSpan({ text: "🦜 papagaio", cls: "papagaio-output-title" });
+    header.createSpan({ text: "🦜 Papagaio Output", cls: "papagaio-output-title" });
 
     // Content
     const pre = wrapper.createEl("pre", { cls: "papagaio-output-pre" });
     const code = pre.createEl("code", { cls: "papagaio-output-code" });
     code.textContent = this.content || "(no output yet — run Lua blocks from a note)";
+
+    // Footer with buttons
+    const footer = wrapper.createDiv({ cls: "papagaio-output-footer" });
+
+    const clearBtn = footer.createEl("button", { text: "Clear Output" });
+    clearBtn.onclick = () => {
+      this.setContent("");
+    };
   }
 }
 
-/* ================================================================
- * Plugin
- * ============================================================= */
 export default class PapagaioMdPlugin extends Plugin {
-  private engine = new LuaEngine();
+  constructor(app, manifest) {
+    super(app, manifest);
+    this.engine = new LuaEngine();
+  }
 
-  async onload(): Promise<void> {
-    console.log("papagaio-md: loading plugin");
+  async onload() {
+    console.log("obsidian-plugin: loading plugin");
 
     // Register view
-    this.registerView(VIEW_TYPE, (leaf) => new PapagaioOutputView(leaf));
+    this.registerView(VIEW_TYPE, (leaf) => new PapagaioOutputView(leaf, this));
 
     // Init WASM
     try {
       await this.engine.init();
-      console.log("papagaio-md:", this.engine.version());
+      console.log("obsidian-plugin:", this.engine.version());
     } catch (e) {
       new Notice("❌ Papagaio: failed to load Lua engine");
-      console.error("papagaio-md: init error", e);
+      console.error("obsidian-plugin: init error", e);
     }
 
     // Command: Run all Lua blocks
@@ -198,11 +175,11 @@ export default class PapagaioMdPlugin extends Plugin {
     this.injectStyles();
   }
 
-  async onunload(): Promise<void> {
+  async onunload() {
     this.app.workspace.detachLeavesOfType(VIEW_TYPE);
   }
 
-  private async runCurrentNote(): Promise<void> {
+  async runCurrentNote() {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (!view) {
       new Notice("No active markdown note");
@@ -230,7 +207,7 @@ export default class PapagaioMdPlugin extends Plugin {
     new Notice("🦜 Done!");
   }
 
-  private async runSelectedCode(): Promise<void> {
+  async runSelectedCode() {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (!view) {
       new Notice("No active markdown note");
@@ -244,7 +221,7 @@ export default class PapagaioMdPlugin extends Plugin {
     this.runCode(selection, "selection");
   }
 
-  private async runCode(code: string, label: string): Promise<void> {
+  async runCode(code, label) {
     try {
       await this.engine.init();
     } catch {
@@ -258,17 +235,17 @@ export default class PapagaioMdPlugin extends Plugin {
     new Notice("🦜 Done!");
   }
 
-  private async showOutput(output: string): Promise<void> {
+  async showOutput(output) {
     await this.activateView();
 
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE);
     if (leaves.length > 0) {
-      const view = leaves[0].view as PapagaioOutputView;
+      const view = leaves[0].view;
       view.setContent(output);
     }
   }
 
-  private async activateView(): Promise<void> {
+  async activateView() {
     const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE);
     if (existing.length > 0) {
       this.app.workspace.revealLeaf(existing[0]);
@@ -282,7 +259,7 @@ export default class PapagaioMdPlugin extends Plugin {
     }
   }
 
-  private injectStyles(): void {
+  injectStyles() {
     const style = document.createElement("style");
     style.id = "obsidian-plugin-styles";
     style.textContent = `
@@ -319,6 +296,28 @@ export default class PapagaioMdPlugin extends Plugin {
       }
       .papagaio-output-code {
         color: var(--text-normal);
+      }
+      .papagaio-output-footer {
+        padding: 12px 16px;
+        border-top: 1px solid var(--background-modifier-border);
+        background: var(--background-secondary);
+        flex-shrink: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 12px;
+      }
+      .papagaio-output-footer button {
+        cursor: pointer;
+        padding: 6px 14px;
+        font-weight: 500;
+        border-radius: 4px;
+        background-color: var(--interactive-normal);
+        color: var(--text-normal);
+        border: 1px solid var(--background-modifier-border);
+      }
+      .papagaio-output-footer button:hover {
+        background-color: var(--interactive-hover);
       }
     `;
     document.head.appendChild(style);
