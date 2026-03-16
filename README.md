@@ -86,6 +86,18 @@ We provide 16 comprehensive examples covering every aspect of the engine.
 14. **[Shared State](examples/14-shared-state.md)**: Persistence between different code blocks.
 15. **[FFI and Memory](examples/15-ffi-memory.md)**: Using papagaio_ffi for raw memory management.
 16. **[Obsidian Bridge API](examples/16-obsidian-api.md)**: Interacting with the vault (read/write/notice).
+17. **[Dynamic Loading (DL)](examples/17-ffi-dlopen.md)**: Loading shared libraries (.so/.dll).
+18. **[Native Calls](examples/18-ffi-calls.md)**: Binding and calling C functions from Lua.
+19. **[Callbacks](examples/19-ffi-callbacks.md)**: Passing Lua functions as arguments to C.
+20. **[Structs and Views](examples/20-ffi-structs.md)**: Managing C-style data structures in Lua.
+21. **[Bulk Arrays](examples/21-ffi-arrays.md)**: Fast reading/writing of typed data arrays.
+22. **[Error Handling](examples/22-ffi-errors.md)**: Using ffi.errno() and dl_error() for debugging.
+23. **[Core Utilities](examples/23-ffi-utilities.md)**: Pointer sizing, nulls, and block memory ops.
+24. **[Advanced Types](examples/24-advanced-types.md)**: Strict path, ID, and numeric validation.
+25. **[Case and Aliases](examples/25-case-and-aliases.md)**: Case enforcement and allowed value lists.
+26. **[Prefix and Suffix](examples/26-prefix-suffix.md)**: Matching tokens by partial content.
+27. **[Replacement Eval](examples/27-replacement-eval.md)**: Using $eval inside replacement strings.
+28. **[Block Variants](examples/28-block-variants.md)**: Single block vs. sequential ($block vs $blockseq).
 
 ---
 

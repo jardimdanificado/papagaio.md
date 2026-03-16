@@ -129,8 +129,7 @@ typedef struct {
 
 typedef struct {
     const char *sigil, *open, *close;
-    const char *pattern, *eval, *block, *blockseq;
-    const char *regex, *options, *optional;
+    const char *pattern, *eval, *block, *blockseq, *optional;
 } Symbols;
 
 typedef struct { Token *t; int count; int cap; Symbols sym; } Pattern;
@@ -171,10 +170,8 @@ struct Papagaio { lua_State *L; int owned; };
 #define PAP_CLOSE    "}"
 #define PAP_PATTERN  "pattern"
 #define PAP_EVAL     "eval"
-#define PAP_BLOCK    "recursive"
-#define PAP_BLOCKSEQ "sequential"
-#define PAP_REGEX    "regex"
-#define PAP_OPTIONS  "options"
+#define PAP_BLOCK    "block"
+#define PAP_BLOCKSEQ "blockseq"
 #define PAP_OPTIONAL "optional"
 #define PAP_ESC      '\x01'
 
@@ -226,7 +223,6 @@ static Symbols make_symbols(const char *sigil, const char *open, const char *clo
     s.sigil    = sigil;  s.open  = open;  s.close = close;
     s.pattern  = PAP_PATTERN;  s.eval    = PAP_EVAL;
     s.block    = PAP_BLOCK;    s.blockseq = PAP_BLOCKSEQ;
-    s.regex    = PAP_REGEX;    s.options  = PAP_OPTIONS;
     s.optional = PAP_OPTIONAL;
     return s;
 }
@@ -763,12 +759,16 @@ static void parse_pattern_ex(const char *pat, Pattern *p, const Symbols *sym)
              */
             {
                 size_t bkw_len = strlen(sym->block);
-                int is_block = ((i + (int)sl + (int)bkw_len) <= n)
+                size_t bsq_len = strlen(sym->blockseq);
+                int is_bsq = ((i + (int)sl + (int)bsq_len) <= n)
+                    && memcmp(pat + i + sl, sym->blockseq, bsq_len) == 0
+                    && str_pfx(pat + i + sl + bsq_len, sym->open);
+                int is_blk = ((i + (int)sl + (int)bkw_len) <= n)
                     && memcmp(pat + i + sl, sym->block, bkw_len) == 0
                     && str_pfx(pat + i + sl + bkw_len, sym->open);
 
-                if (is_block) {
-                    i += sl + (int)bkw_len; /* skip sigil + keyword */
+                if (is_blk || is_bsq) {
+                    i += sl + (int)(is_blk ? bkw_len : bsq_len);
 
                     i += ol; /* skip open delimiter */
                     int o = i;
@@ -799,7 +799,8 @@ static void parse_pattern_ex(const char *pat, Pattern *p, const Symbols *sym)
                     t->var = (StrView){ pat + v, (size_t)(i - v) };
 
                     if (i < n && pat[i] == '?') { t->optional = 1; i++; }
-                    t->type = TOK_BLOCKSEQ; p->count++; continue;
+                    t->type = is_blk ? TOK_BLOCK : TOK_BLOCKSEQ;
+                    p->count++; continue;
                 }
             }
 
@@ -1398,7 +1399,7 @@ static int l_process(lua_State *L)
         for (int i = 0; i < pc; i++) {
             Match m;
             if (match_pattern(input, len, &rules[i].pattern, pos, &m)) {
-                char *r = apply_replacement_ex(rules[i].replacement, &m, &sym, NULL);
+                char *r = apply_replacement_ex(rules[i].replacement, &m, &sym, L);
                 sb_append_n(&out, r, strlen(r)); free(r);
                 pos = m.end; free_match(&m); matched = 1; break;
             }
@@ -1439,7 +1440,7 @@ static int l_process_ex(lua_State *L)
         for (int i = 0; i < pc; i++) {
             Match m;
             if (match_pattern(input, len, &rules[i].pattern, pos, &m)) {
-                char *r = apply_replacement_ex(rules[i].replacement, &m, &sym, NULL);
+                char *r = apply_replacement_ex(rules[i].replacement, &m, &sym, L);
                 sb_append_n(&out, r, strlen(r)); free(r);
                 pos = m.end; free_match(&m); matched = 1; break;
             }
