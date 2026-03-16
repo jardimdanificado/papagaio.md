@@ -1,108 +1,127 @@
 # Papagaio Ecosystem 🦜
 
-The **Papagaio** project is a complete suite for text and data processing using Lua, designed for direct interaction with Markdown files. It is composed of three integrated tools:
+The Papagaio ecosystem is a high-performance text processing and automation suite powered by Lua 5.4. It is designed to bridge the gap between structured Markdown documents and programmable logic, offering a unified engine that runs natively on Desktop (CLI) and seamlessly within Obsidian (Plugin/WASM).
 
-1. **`papagaio`**: A standalone C library built natively for modern Lua pattern processing.
-2. **`papagaio-ffi`**: A native C implementation for memory calls (FFI) optimized for the Lua stack.
-3. **`papagaio-md` (CLI)**: A command-line interface that runs `.md` scripts natively with Lua.
-4. **`obsidian-plugin`**: An Obsidian plugin that enables this entire engine on both Android and Desktop, *offline*, directly within an Obsidian view.
+## Components
+
+1.  **papagaio**: A standalone C library implementing a non-regex pattern matching engine. It uses a custom grammar for token capture and transformation.
+2.  **papagaio-ffi**: A memory-manipulation library that provides raw pointer access, typed memory reads/writes, and dynamic loading (DL) capabilities for Lua.
+3.  **papagaio-md**: A CLI runner that parses Markdown files into a structured Abstract Syntax Tree (AST) and executes embedded Lua blocks.
+4.  **obsidian-plugin**: A WebAssembly-powered bridge that brings the entire engine to Obsidian, supporting Desktop, Android, and iOS.
 
 ---
 
-## 💻 1. The Obsidian Plugin (`obsidian-plugin`)
+## The Pattern Matching Engine
 
-This magical plugin finds all ` ```lua ``` ` code blocks inside a note, **reads the outer Markdown structure** (converting headings like `# Title` and tables like `| Table |` into a `global.md` tree), and then executes the Lua code from your Markdown within its own virtual machine!
+Papagaio uses a unique pattern matching syntax that prioritizes context and readability over complex regular expressions.
 
-> [!TIP]
-> **Total Compatibility**: Yes! It works flawlessly in the Obsidian app on **Android** as well as all **Desktop** systems. Because the entire Lua 5.4 engine (along with _papagaio_ and _papagaio-ffi_ core) is compiled into WebAssembly and injected as a single JavaScript bundle, no native Node.js functionality (`fs` or external binaries) gets in the way. It runs smoothly via the internal V8 / Chrome engine.
+### Basic Syntax
+- `$name`: Captures a single whitespace-delimited token.
+- `$name$type`: Captures a token only if it matches a specific type (e.g., `$v$int`, `$v$hex`).
+- `$name?`: Makes the capture optional.
+- `$block{OPEN}{CLOSE}name`: Captures content between delimiters (e.g., square brackets or parentheses).
+- `$eval{ code }`: Executes inline Lua code during the transformation process.
 
-### ⬇️ How to build/install into Obsidian
+---
 
-The entire Papagaio suite can be recompiled with a single command, automatically generating the WASM distribution and injecting it into your Vault:
+## Obsidian Plugin
 
-```bash
-cd ~/repos/papagaio
+The Obsidian plugin enables "Programmable Notes". It parses the active note's headings, lists, and tables into a global Lua table and executes ` ```lua ` blocks.
 
-# Compiles the whole ecosystem, builds the WASM Lua API and installs it to the target folder
-make install-obsidian VAULT=~/Documents/my_vault
-```
+### Global Data Structure (global.md)
+Markdown headings are transformed into nested Lua tables. Sequential content (paragraphs, code blocks, tables) are stored as array elements within their respective heading.
 
-> **Attention**: Replace `~/Documents/my_vault` with the *actual* path to your Obsidian Vault on your development machine.
-After running `make`, open Obsidian ➜ Settings ➜ Community Plugins and enable the `obsidian-plugin`.
-
-### ⚡ How to use the Plugin Tools
-
-In Obsidian, you can execute your codes using:
-- **Command Palette** (Ctrl+P / Cmd+P):
-  - `Run Lua blocks in current note`
-  - `Run selected Lua code`
-  - `Show output panel`
-- **Sidebar Icons (Ribbon)**:
-  - ▶️ "Run Lua file"
-  - ⌨️ "Run selected Lua code"
-- **View Panel Footer 🦜**:
-  - In the "Papagaio Output" panel, there is a "Clear Output" button to clean the panel's standard output log.
-
-Every `print()` standard output will render in this panel, formatted as copyable and selectable text.
-
-### 🧩 How Markdown is translated (`global.md`)
-
-All outer Markdown text is mapped into a global Lua table (`global.md`) so your Lua scripts can query it dynamically.
-
-If your Markdown looks like this:
+**Markdown Input:**
 ```markdown
-# person
-## name
-john
-## age 
-45
-
-| a | b |
-|---|---|
-| 1 | 2 |
-| hi | bye |
+# project
+## tasks
+- fix bug
+- add feature
 ```
 
-The data structure available to your ` ```lua ` blocks will be generated exactly like this:
+**Lua Access:**
 ```lua
-{
-  ["person"] = {
-    ["age"] = { 
-      [1] = 45,                  -- Automatically converted to a number
-      [2] = {                    -- The table generated continuous arrays
-        [1] = { [1] = "a", [2] = "b" },
-        [2] = { [1] = 1,   [2] = 2 },
-        [3] = { [1] = "hi", [2] = "bye" },
-      }
-    },
-    ["name"] = {
-      [1] = "john",
-    },
-  },
-}
+print(global.md.project.tasks[1]) -- Outputs the list content
 ```
-From here, inside a Lua block within the same note, you just interact with it directly via `global.md.person.age[1]`.
+
+### High-Performance Bridge
+The plugin uses a single-file WebAssembly bundle containing a complete Lua 5.4 VM. On Desktop and Mobile, it runs completely offline with zero dependencies on Node.js.
 
 ---
 
-## 📟 2. The CLI Tool (`papagaio-md`)
+## CLI Tool (papagaio-md)
 
-For real local/Linux environments, beyond the virtual notes, you have access to the **native CLI runner**, which comes with unrestricted Operating System features (pure Libffi with Dynamic Linking Callbacks via libdl).
+The CLI tool allows you to treat Markdown files as executable scripts in a local environment.
 
-### ⬇️ Compiling native modules
-
+### Compilation
 ```bash
-cd ~/repos/papagaio
-
-# Downloads Lua and compiles the modules (papagaio) natively for the OS
 make all
 ```
-*This will generate the dynamic libraries `papagaio.so` and `papagaio_ffi.so` in their respective folders and will build the executable CLI tool `papagaio-md/papagaio-md`.*
+This builds the native `papagaio.so`, `papagaio_ffi.so`, and the `papagaio-md` executable.
 
-### ⚡ How to use the CLI
-Using a text file `notes.md` containing `#` headings or tables, exactly following the same structure used in the Obsidian plugin shown above:
+### Execution
 ```bash
-./papagaio-md/papagaio-md ./any_folder/notes.md
+./papagaio-md/papagaio-md script.md
 ```
 
-Everything will be transformed into the `global.md` AST via C natively, and your embedded scripts will be executed in the generated Lua state perfectly.
+---
+
+## 16 Detailed Examples
+
+We provide 16 comprehensive examples covering every aspect of the engine.
+
+1.  **[Basic Token Substitution](examples/01-basic-substitution.md)**: Introduction to $variable capture.
+2.  **[Multiple Patterns](examples/02-multiple-patterns.md)**: Applying sequential rules in a single pass.
+3.  **[Custom Delimiters](examples/03-custom-delimiters.md)**: Using process_ex for non-standard sigils.
+4.  **[Inline Patterns](examples/04-process-text-inline.md)**: Embedding $pattern rules in documents.
+5.  **[Type Modifiers](examples/05-type-modifiers.md)**: Restricting captures to int, hex, word, etc.
+6.  **[Optional Captures](examples/06-optional-captures.md)**: Handling missing data with the ? suffix.
+7.  **[Eval Blocks](examples/07-eval-blocks.md)**: Inline math and logic during transformation.
+8.  **[Eval With Globals](examples/08-eval-globals.md)**: Accessing script variables inside patterns.
+9.  **[Pure Eval](examples/09-pure-eval.md)**: Dynamic injections like timestamps and counters.
+10. **[Block Captures](examples/10-block-captures.md)**: Handling multi-delimited content ($block).
+11. **[Escaping](examples/11-escaping.md)**: How to use literal dollar signs in patterns.
+12. **[Process Pairs](examples/12-process-pairs.md)**: Using tables to define transformation rules.
+13. **[Markdown AST](examples/13-global-md-ast.md)**: Navigation through global.md structure.
+14. **[Shared State](examples/14-shared-state.md)**: Persistence between different code blocks.
+15. **[FFI and Memory](examples/15-ffi-memory.md)**: Using papagaio_ffi for raw memory management.
+16. **[Obsidian Bridge API](examples/16-obsidian-api.md)**: Interacting with the vault (read/write/notice).
+
+---
+
+## Obsidian Bridge API (Lua)
+
+The `obsidian` module is available globally within the plugin environment:
+
+- `obsidian.read(path)`: Reads vault file content.
+- `obsidian.write(path, content)`: Writes or creates vault files.
+- `obsidian.list_files()`: Returns an array of paths for all vault files.
+- `obsidian.notice(message)`: Triggers a native Obsidian notification.
+- `obsidian.mkdir(path)`: Creates a new directory in the vault.
+- `obsidian.get_metadata_json(path)`: Retrieves note frontmatter as a JSON string.
+- `obsidian.active_path`: Global variable containing the current note path.
+- `obsidian.active_content`: Global variable containing current note content.
+
+---
+
+## FFI and Native Calls
+
+The CLI version supports full FFI capabilities via `papagaio_ffi.so`, including dynamic loading of shared libraries and raw memory manipulation. The Obsidian plugin supports core memory primitives (alloc, read, write) but restricts platform-specific operations for security and compatibility.
+
+---
+
+## Cross-Platform Compatibility
+
+Papagaio is built for portability:
+- **Linux/macOS/Windows**: Native compilation supported (GCC, Clang, MSVC, MinGW).
+- **Android/iOS**: Full support within Obsidian using the WASM-based plugin.
+- **Architectures**: x86, x64, ARMv7, and ARM64.
+
+---
+
+## Technical Details
+
+- **Lua Version**: 5.4.7
+- **Binary Size**: ~400KB (WASM bundle)
+- **Dependencies**: Standard C Library only.
+- **License**: MIT
