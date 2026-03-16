@@ -25,6 +25,10 @@ HAS_LUA_PC := $(shell $(PKG_CONFIG) --exists $(LUA) 2>/dev/null && echo "yes" \
                || $(PKG_CONFIG) --exists lua54 2>/dev/null && echo "yes" \
                || echo "no")
 
+CC     ?= cc
+AR     ?= ar
+RANLIB ?= ranlib
+
 ifeq ($(HAS_LUA_PC),yes)
   # System has Lua via pkg-config
   DEPS = fetch_lua_if_needed
@@ -51,8 +55,8 @@ fetch_lua_if_needed:
 
 build_local_lua: fetch_lua_if_needed
 	@if [ ! -f "lua/liblua.a" ]; then \
-		echo "Building local Lua natively..."; \
-		$(MAKE) -C lua MYCFLAGS="-fPIC" MYLDFLAGS="-fPIC" a lua; \
+		echo "Building local Lua for target..."; \
+		$(MAKE) -C lua CC="$(CC)" AR="$(AR) rc" RANLIB="$(RANLIB)" MYCFLAGS="-fPIC" MYLDFLAGS="-fPIC" a; \
 	fi
 
 papagaio: $(DEPS)

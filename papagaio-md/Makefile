@@ -22,9 +22,10 @@ LUA_LIBS   ?= $(shell $(PKG_CONFIG) --libs $(LUA) 2>/dev/null \
 
 FFI_CFLAGS ?= $(shell $(PKG_CONFIG) --cflags libffi 2>/dev/null || echo "")
 FFI_LIBS   ?= $(shell $(PKG_CONFIG) --libs libffi 2>/dev/null || echo "-lffi")
+DL_LIBS     = $(if $(findstring NT,$(OS)),,-ldl)
 
 CFLAGS  += -O2 -Wall -Wextra -std=c11 $(LUA_CFLAGS) -DPAPAGAIO_FFI_HAS_ALL $(FFI_CFLAGS)
-LDFLAGS += $(LUA_LIBS) $(FFI_LIBS) -ldl
+LDFLAGS += $(LUA_LIBS) $(FFI_LIBS) $(DL_LIBS)
 
 PAP_DIR = ../papagaio
 FFI_DIR = ../papagaio-ffi

@@ -60,12 +60,14 @@ PREFIX     ?= $(HOME)/.local
 LUA_LIBDIR ?= $(PREFIX)/lib/lua/5.4
 
 # ── Feature-dependent flags ─────────────────────────────────────────────
+DL_LIBS = $(if $(findstring NT,$(OS)),,-ldl)
+
 ifeq ($(FEATURES),full)
   FEAT_CFLAGS  = -DPAPAGAIO_FFI_HAS_ALL $(FFI_CFLAGS)
-  FEAT_LDFLAGS = $(FFI_LIBS) -ldl
+  FEAT_LDFLAGS = $(FFI_LIBS) $(DL_LIBS)
 else ifeq ($(FEATURES),dl)
   FEAT_CFLAGS  = -DPAPAGAIO_FFI_HAS_DL
-  FEAT_LDFLAGS = -ldl
+  FEAT_LDFLAGS = $(DL_LIBS)
 else
   FEAT_CFLAGS  =
   FEAT_LDFLAGS =
