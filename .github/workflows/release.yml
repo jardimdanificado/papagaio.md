@@ -1,19 +1,35 @@
-name: Release Obsidian Plugin
+name: Release Papagaio
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version number (e.g., 1.0.0)'
+        description: "Version (ex: 1.2.0)"
         required: true
         type: string
+      create_tag:
+        description: "Create tag vX.Y.Z if it does not exist"
+        required: true
+        default: true
+        type: boolean
+      prerelease:
+        description: "Mark release as pre-release"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
 
 jobs:
-  build:
+  # ---------------------------------------------------------------------------
+  # Job 1: Build Obsidian Plugin (WASM + JS)
+  # ---------------------------------------------------------------------------
+  build-obsidian:
+    name: Build Obsidian Plugin
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -24,44 +40,188 @@ jobs:
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v14
 
-      - name: Verify Emscripten
-        run: emcc -v
-
-      - name: Update versions & Install dependencies
+      - name: Fetch Lua Source
         run: |
-          # Update the version in Obsidian plugin manifests
-          cd obsidian-plugin
-          sed -i 's/"version": ".*"/"version": "${{ github.event.inputs.version }}"/' manifest.json
-          sed -i 's/"version": ".*"/"version": "${{ github.event.inputs.version }}"/' package.json
-          
-          # Install dependencies
-          npm install
-
-      - name: Build and Prepare Artifacts
-        run: |
-          # Fetch Lua and prepare WASM engine
           make fetch_lua_if_needed
-          
-          # Build the plugin
+
+      - name: Build Plugin
+        run: |
+          # Update version in manifests
           cd obsidian-plugin
+          sed -i 's/"version": ".*"/"version": "${{ inputs.version }}"/' manifest.json
+          sed -i 's/"version": ".*"/"version": "${{ inputs.version }}"/' package.json
+          
+          # Build
+          npm install
           make clean
           make
           
-          # Prepare release artifacts
-          cd ..
-          mkdir -p release
-          cp obsidian-plugin/dist/main.js release/
-          cp obsidian-plugin/manifest.json release/
-          cp obsidian-plugin/styles.css release/
+          # Prepare dist folder for upload
+          mkdir -p ../plugin-dist
+          cp dist/main.js ../plugin-dist/
+          cp manifest.json ../plugin-dist/
+          cp styles.css ../plugin-dist/
 
-      - name: Create GitHub Release
+      - name: Upload Plugin Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: papagaio-obsidian-plugin
+          path: plugin-dist/
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Build CLI (Native Binaries)
+  # ---------------------------------------------------------------------------
+  build-cli:
+    name: Build CLI (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            os: ubuntu-latest
+            target: linux
+            archive: linux-x64
+          - name: Linux ARM64
+            os: ubuntu-24.04-arm
+            target: linux-arm64
+            archive: linux-arm64
+          - name: macOS Intel x64
+            os: macos-15-intel
+            target: macos-intel
+            archive: macos-x64
+          - name: macOS ARM64
+            os: macos-14
+            target: macos-arm64
+            archive: macos-arm64
+          - name: Windows x64 (MinGW)
+            os: windows-latest
+            target: windows-mingw
+            archive: windows-x64-mingw
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Ubuntu)
+        if: startsWith(matrix.target, 'linux')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libffi-dev pkg-config
+
+      - name: Install dependencies (macOS)
+        if: startsWith(matrix.target, 'macos')
+        run: |
+          brew update
+          brew install libffi pkg-config
+
+      - name: Setup MSYS2 (Windows MinGW)
+        if: matrix.target == 'windows-mingw'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git
+            make
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-libffi
+            mingw-w64-x86_64-pkgconf
+
+      - name: Fetch Lua Source
+        run: |
+          make fetch_lua_if_needed
+
+      - name: Build CLI (Linux/macOS)
+        if: startsWith(matrix.target, 'linux') || startsWith(matrix.target, 'macos')
+        shell: bash
+        run: |
+          if [ "${RUNNER_OS}" = "macOS" ]; then
+            export PKG_CONFIG_PATH="$(brew --prefix libffi)/lib/pkgconfig:$PKG_CONFIG_PATH"
+          fi
+          make clean
+          make all -j"$(getconf _NPROCESSORS_ONLN || echo 2)"
+
+      - name: Build CLI (Windows MinGW)
+        if: matrix.target == 'windows-mingw'
+        shell: msys2 {0}
+        run: |
+          make clean
+          make all -j2
+
+      - name: Package artifact (Linux/macOS)
+        if: startsWith(matrix.target, 'linux') || startsWith(matrix.target, 'macos')
+        shell: bash
+        run: |
+          mkdir -p dist_pkg
+          # Copy binary (detecting .exe for safety, though mostly unix here)
+          if [ -f "papagaio-md/papagaio-md" ]; then cp papagaio-md/papagaio-md dist_pkg/; fi
+          if [ -f "papagaio-md/papagaio-md.exe" ]; then cp papagaio-md/papagaio-md.exe dist_pkg/; fi
+          
+          cp README.md dist_pkg/
+          [ -f CHANGELOG.md ] && cp CHANGELOG.md dist_pkg/ || true
+          [ -d examples ] && cp -r examples dist_pkg/ || true
+          
+          tar -czf "papagaio-md-v${{ inputs.version }}-${{ matrix.archive }}.tar.gz" -C dist_pkg .
+
+      - name: Package artifact (Windows MinGW)
+        if: matrix.target == 'windows-mingw'
+        shell: msys2 {0}
+        run: |
+          mkdir -p dist_pkg
+          cp papagaio-md/papagaio-md.exe dist_pkg/
+          cp README.md dist_pkg/
+          [ -f CHANGELOG.md ] && cp CHANGELOG.md dist_pkg/ || true
+          [ -d examples ] && cp -r examples dist_pkg/ || true
+          # Note: Compress-Archive is a powershell command, but we are in msys2 shell. 
+          # Let's use zip if available or call powershell explicitly.
+          powershell -NoProfile -Command "Compress-Archive -Path dist_pkg\\* -DestinationPath papagaio-md-v${{ inputs.version }}-${{ matrix.archive }}.zip -Force"
+
+      - name: Upload CLI Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: papagaio-md-${{ matrix.target }}
+          path: |
+            *.tar.gz
+            *.zip
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Release
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publish Release
+    runs-on: ubuntu-latest
+    needs: [build-obsidian, build-cli]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create tag if requested
+        if: inputs.create_tag
+        run: |
+          tag="v${{ inputs.version }}"
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag -a "$tag" -m "Release $tag"
+            git push origin "$tag"
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.version }}
-          name: Release ${{ github.event.inputs.version }}
+          tag_name: v${{ inputs.version }}
+          name: v${{ inputs.version }}
+          body: "Release v${{ inputs.version }} of Papagaio Ecosystem"
+          prerelease: ${{ inputs.prerelease }}
           files: |
-            release/main.js
-            release/manifest.json
-            release/styles.css
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            artifacts/**/*

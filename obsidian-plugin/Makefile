@@ -12,6 +12,7 @@
 #   VAULT   path to your Obsidian vault (for install)
 
 VAULT ?= $(HOME)/obsidian-vault
+NODE  ?= node
 
 .PHONY: all wasm plugin install clean
 
@@ -21,7 +22,7 @@ wasm:
 	$(MAKE) -C wasm
 
 plugin: node_modules dist/papagaio.js
-	node build.mjs
+	$(NODE) build.mjs
 
 node_modules:
 	npm install
