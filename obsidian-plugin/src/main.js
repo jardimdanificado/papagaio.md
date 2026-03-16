@@ -65,6 +65,7 @@ class PapagaioOutputView extends ItemView {
     super(leaf);
     this.plugin = plugin;
     this.content = "";
+    this.textarea = null;
   }
 
   getViewType() {
@@ -85,7 +86,11 @@ class PapagaioOutputView extends ItemView {
 
   setContent(text) {
     this.content = text;
-    this.render();
+    if (this.textarea) {
+      this.textarea.value = text;
+    } else {
+      this.render();
+    }
   }
 
   render() {
@@ -98,18 +103,15 @@ class PapagaioOutputView extends ItemView {
     const header = wrapper.createDiv({ cls: "papagaio-output-header" });
     header.createSpan({ text: "🦜 Papagaio Output", cls: "papagaio-output-title" });
 
-    // Content
-    const pre = wrapper.createEl("pre", { cls: "papagaio-output-pre" });
-    const code = pre.createEl("code", { cls: "papagaio-output-code" });
-    code.textContent = this.content || "(no output yet — run Lua blocks from a note)";
-
-    // Footer with buttons
-    const footer = wrapper.createDiv({ cls: "papagaio-output-footer" });
-
-    const clearBtn = footer.createEl("button", { text: "Clear Output" });
-    clearBtn.onclick = () => {
-      this.setContent("");
-    };
+    // Editable Content
+    this.textarea = wrapper.createEl("textarea", {
+      cls: "papagaio-output-editor",
+      placeholder: "(no output yet — run Lua blocks from a note)"
+    });
+    this.textarea.value = this.content;
+    this.textarea.addEventListener("input", (e) => {
+      this.content = e.target.value;
+    });
   }
 }
 
@@ -284,44 +286,18 @@ export default class PapagaioMdPlugin extends Plugin {
         font-size: 14px;
         color: var(--text-normal);
       }
-      .papagaio-output-pre {
+      .papagaio-output-editor {
         flex: 1;
         margin: 0;
         padding: 16px;
-        overflow: auto;
+        border: none;
+        resize: none;
         background: var(--background-primary);
         font-family: var(--font-monospace);
         font-size: 13px;
         line-height: 1.5;
-        white-space: pre-wrap;
-        word-break: break-word;
-        user-select: text;
-        -webkit-user-select: text;
-      }
-      .papagaio-output-code {
         color: var(--text-normal);
-      }
-      .papagaio-output-footer {
-        padding: 12px 16px;
-        border-top: 1px solid var(--background-modifier-border);
-        background: var(--background-secondary);
-        flex-shrink: 0;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        gap: 12px;
-      }
-      .papagaio-output-footer button {
-        cursor: pointer;
-        padding: 6px 14px;
-        font-weight: 500;
-        border-radius: 4px;
-        background-color: var(--interactive-normal);
-        color: var(--text-normal);
-        border: 1px solid var(--background-modifier-border);
-      }
-      .papagaio-output-footer button:hover {
-        background-color: var(--interactive-hover);
+        outline: none;
       }
     `;
     document.head.appendChild(style);

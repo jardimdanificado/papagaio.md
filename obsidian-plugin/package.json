@@ -1,7 +1,7 @@
 {
   "name": "papagaio-md",
-  "version": "0.0.3",
-  "description": "Execute Lua code blocks in Obsidian notes with embedded Lua 5.4 + papagaio + papagaio_ffi",
+  "version": "0.0.4",
+  "description": "Execute Lua with embedded Lua 5.4 + papagaio + papagaio_ffi",
   "main": "dist/main.js",
   "scripts": {
     "build": "node build.mjs",
@@ -12,6 +12,5 @@
     "esbuild": "^0.21.0",
     "obsidian": "^1.5.0",
     "@types/node": "^20.0.0"
-  },
-  "license": "MIT"
+  }
 }
