@@ -1,0 +1,8 @@
+*.so
+.vscode
+*.o
+*.a
+obsidian-plugin/node_modules/*
+obsidian-plugin/dist/*
+lua
+papagaio-md/papagaio-md
