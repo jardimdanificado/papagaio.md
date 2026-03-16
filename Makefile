@@ -67,6 +67,9 @@ cli: $(DEPS)
 obsidian: fetch_lua_if_needed
 	$(MAKE) -C obsidian-plugin
 
+wasm: fetch_lua_if_needed
+	$(MAKE) -C obsidian-plugin wasm
+
 install-obsidian:
 	@if [ -z "$(VAULT)" ]; then echo "VAULT not set. Use: make install-obsidian VAULT=~/Documents/teste"; exit 1; fi
 	$(MAKE) clean

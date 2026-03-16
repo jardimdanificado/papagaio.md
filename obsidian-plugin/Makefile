@@ -22,7 +22,7 @@ wasm:
 	$(MAKE) -C wasm
 
 plugin: node_modules dist/papagaio.js
-	$(NODE) build.mjs
+	npm run build
 
 node_modules:
 	npm install

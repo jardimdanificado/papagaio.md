@@ -1,4 +1,4 @@
-name: Release Papagaio
+name: Release Manual
 
 on:
   workflow_dispatch:
@@ -23,10 +23,10 @@ permissions:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Job 1: Build Obsidian Plugin (WASM + JS)
+  # Job 1: Build Obsidian Plugin
   # ---------------------------------------------------------------------------
-  build-obsidian:
-    name: Build Obsidian Plugin
+  obsidian:
+    name: Build Obsidian plugin
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -39,40 +39,77 @@ jobs:
 
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: latest
 
-      - name: Fetch Lua Source
+      - name: Install dependencies and build plugin
         run: |
+          # Fetch Lua
           make fetch_lua_if_needed
-
-      - name: Build Plugin
-        run: |
+          
           # Update version in manifests
           cd obsidian-plugin
           sed -i 's/"version": ".*"/"version": "${{ inputs.version }}"/' manifest.json
           sed -i 's/"version": ".*"/"version": "${{ inputs.version }}"/' package.json
           
-          # Build
+          # Build (Makefile calls npm run build)
           npm install
-          make clean
-          make
-          
-          # Prepare dist folder for upload
-          mkdir -p ../plugin-dist
-          cp dist/main.js ../plugin-dist/
-          cp manifest.json ../plugin-dist/
-          cp styles.css ../plugin-dist/
+          cd ..
+          make obsidian
 
-      - name: Upload Plugin Artifact
+      - name: Package plugin artifact
+        run: |
+          mkdir -p dist/papagaio-md
+          cp obsidian-plugin/dist/main.js dist/papagaio-md/
+          cp obsidian-plugin/manifest.json dist/papagaio-md/
+          cp obsidian-plugin/styles.css dist/papagaio-md/
+          tar -czf "papagaio-v${{ inputs.version }}-obsidian.tar.gz" -C dist papagaio-md
+
+      - name: Upload plugin artifact
         uses: actions/upload-artifact@v4
         with:
-          name: papagaio-obsidian-plugin
-          path: plugin-dist/
+          name: papagaio-obsidian
+          path: papagaio-v${{ inputs.version }}-obsidian.tar.gz
 
   # ---------------------------------------------------------------------------
-  # Job 2: Build CLI (Native Binaries)
+  # Job 2: Build WASM runtime (standalone)
   # ---------------------------------------------------------------------------
-  build-cli:
-    name: Build CLI (${{ matrix.name }})
+  wasm:
+    name: Build WASM runtime
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: latest
+
+      - name: Build WASM module
+        run: |
+          make wasm
+
+      - name: Package WASM artifact
+        run: |
+          mkdir -p dist_wasm
+          cp obsidian-plugin/dist/papagaio.js dist_wasm/
+          # In single file mode, there might not be a separate .wasm file, 
+          # but we copy it if it exists.
+          [ -f obsidian-plugin/dist/papagaio.wasm ] && cp obsidian-plugin/dist/papagaio.wasm dist_wasm/ || true
+          tar -czf "papagaio-v${{ inputs.version }}-wasm.tar.gz" -C dist_wasm .
+
+      - name: Upload WASM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: papagaio-wasm
+          path: papagaio-v${{ inputs.version }}-wasm.tar.gz
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Build CLI Binaries (Matrix)
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -94,19 +131,51 @@ jobs:
             os: macos-14
             target: macos-arm64
             archive: macos-arm64
-          - name: Windows x64 (MinGW)
+          - name: Windows x64 (MinGW64)
             os: windows-latest
             target: windows-mingw
             archive: windows-x64-mingw
+          - name: Linux x86 32-bit
+            os: ubuntu-latest
+            target: linux-x86
+            archive: linux-x86
+          - name: Linux ARMv7 32-bit
+            os: ubuntu-latest
+            target: linux-armv7
+            archive: linux-armv7
+          - name: Windows x86 32-bit (MinGW32)
+            os: windows-latest
+            target: windows-mingw32
+            archive: windows-x86-mingw
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate version format
+        shell: bash
+        run: |
+          if ! [[ "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version format: ${{ inputs.version }}"
+            exit 1
+          fi
 
       - name: Install dependencies (Ubuntu)
         if: startsWith(matrix.target, 'linux')
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libffi-dev pkg-config
+
+      - name: Install cross-compile toolchain (Linux x86 32-bit)
+        if: matrix.target == 'linux-x86'
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib libffi-dev:i386
+
+      - name: Install cross-compile toolchain (Linux ARMv7)
+        if: matrix.target == 'linux-armv7'
+        run: |
+          sudo apt-get install -y gcc-arm-linux-gnueabihf libffi-dev
 
       - name: Install dependencies (macOS)
         if: startsWith(matrix.target, 'macos')
@@ -127,22 +196,42 @@ jobs:
             mingw-w64-x86_64-libffi
             mingw-w64-x86_64-pkgconf
 
-      - name: Fetch Lua Source
+      - name: Setup MSYS2 (Windows MinGW32)
+        if: matrix.target == 'windows-mingw32'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW32
+          update: true
+          install: >-
+            git
+            make
+            mingw-w64-i686-gcc
+            mingw-w64-i686-libffi
+            mingw-w64-i686-pkgconf
+
+      - name: Fetch Lua
         run: |
           make fetch_lua_if_needed
 
-      - name: Build CLI (Linux/macOS)
+      - name: Build binary (Linux/macOS)
         if: startsWith(matrix.target, 'linux') || startsWith(matrix.target, 'macos')
         shell: bash
         run: |
           if [ "${RUNNER_OS}" = "macOS" ]; then
             export PKG_CONFIG_PATH="$(brew --prefix libffi)/lib/pkgconfig:$PKG_CONFIG_PATH"
           fi
+          if [ "${{ matrix.target }}" = "linux-x86" ]; then
+            export CFLAGS="-m32"
+            export LDFLAGS="-m32"
+          elif [ "${{ matrix.target }}" = "linux-armv7" ]; then
+            export CC=arm-linux-gnueabihf-gcc
+            export CROSS_COMPILE=arm-linux-gnueabihf-
+          fi
           make clean
           make all -j"$(getconf _NPROCESSORS_ONLN || echo 2)"
 
-      - name: Build CLI (Windows MinGW)
-        if: matrix.target == 'windows-mingw'
+      - name: Build binary (Windows MinGW)
+        if: matrix.target == 'windows-mingw' || matrix.target == 'windows-mingw32'
         shell: msys2 {0}
         run: |
           make clean
@@ -153,18 +242,16 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist_pkg
-          # Copy binary (detecting .exe for safety, though mostly unix here)
-          if [ -f "papagaio-md/papagaio-md" ]; then cp papagaio-md/papagaio-md dist_pkg/; fi
-          if [ -f "papagaio-md/papagaio-md.exe" ]; then cp papagaio-md/papagaio-md.exe dist_pkg/; fi
-          
+          # Detect binary name
+          if [ -f "papagaio-md/papagaio-md" ]; then BIN="papagaio-md/papagaio-md"; else BIN="papagaio-md/papagaio-md.exe"; fi
+          cp "$BIN" dist_pkg/papagaio-md
           cp README.md dist_pkg/
           [ -f CHANGELOG.md ] && cp CHANGELOG.md dist_pkg/ || true
           [ -d examples ] && cp -r examples dist_pkg/ || true
-          
-          tar -czf "papagaio-md-v${{ inputs.version }}-${{ matrix.archive }}.tar.gz" -C dist_pkg .
+          tar -czf "papagaio-v${{ inputs.version }}-${{ matrix.archive }}.tar.gz" -C dist_pkg .
 
       - name: Package artifact (Windows MinGW)
-        if: matrix.target == 'windows-mingw'
+        if: matrix.target == 'windows-mingw' || matrix.target == 'windows-mingw32'
         shell: msys2 {0}
         run: |
           mkdir -p dist_pkg
@@ -172,26 +259,24 @@ jobs:
           cp README.md dist_pkg/
           [ -f CHANGELOG.md ] && cp CHANGELOG.md dist_pkg/ || true
           [ -d examples ] && cp -r examples dist_pkg/ || true
-          # Note: Compress-Archive is a powershell command, but we are in msys2 shell. 
-          # Let's use zip if available or call powershell explicitly.
-          powershell -NoProfile -Command "Compress-Archive -Path dist_pkg\\* -DestinationPath papagaio-md-v${{ inputs.version }}-${{ matrix.archive }}.zip -Force"
+          powershell -NoProfile -Command "Compress-Archive -Path dist_pkg\\* -DestinationPath papagaio-v${{ inputs.version }}-${{ matrix.archive }}.zip -Force"
 
-      - name: Upload CLI Artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: papagaio-md-${{ matrix.target }}
+          name: papagaio-${{ matrix.target }}
           path: |
             *.tar.gz
             *.zip
           if-no-files-found: error
 
   # ---------------------------------------------------------------------------
-  # Job 3: Release
+  # Job 4: Release
   # ---------------------------------------------------------------------------
   release:
-    name: Publish Release
+    name: Publish release
     runs-on: ubuntu-latest
-    needs: [build-obsidian, build-cli]
+    needs: [build, wasm, obsidian]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -211,17 +296,48 @@ jobs:
             git push origin "$tag"
           fi
 
-      - name: Download all artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Publish GitHub Release
+      - name: Extract changelog notes
+        id: notes
+        run: |
+          version="${{ inputs.version }}"
+          touch CHANGELOG.md
+          notes="$(awk -v v="$version" '
+            $0 ~ "^## " v "$" { in_section=1; next }
+            in_section && $0 ~ "^## " { exit }
+            in_section { print }
+          ' CHANGELOG.md)"
+          if [ -z "$notes" ]; then
+            notes="Release v$version"
+          fi
+          {
+            echo "body<<EOF"
+            echo "$notes"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Clean existing release assets for tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v${{ inputs.version }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            # Use jq to get asset names and delete them
+            gh release view "$tag" --json assets --jq '.assets[].name' | while read -r asset; do
+              [ -n "$asset" ] || continue
+              gh release delete-asset "$tag" "$asset" -y
+            done
+          fi
+
+      - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ inputs.version }}
           name: v${{ inputs.version }}
-          body: "Release v${{ inputs.version }} of Papagaio Ecosystem"
+          body: ${{ steps.notes.outputs.body }}
           prerelease: ${{ inputs.prerelease }}
-          files: |
-            artifacts/**/*
+          files: artifacts/**/*
